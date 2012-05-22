@@ -34,7 +34,7 @@ class TranslationRepository extends EntityRepository
      * @param object $entity
      * @param string $field
      * @param string $locale
-     * @param mixed $value
+     * @param mixed  $value
      * @return TranslationRepository
      */
     public function translate($entity, $field, $locale, $value)
@@ -48,6 +48,7 @@ class TranslationRepository extends EntityRepository
         $this->listener->addTranslation($oid, $field, $locale, $value);
         return $this;
     }
+
     /**
      * Loads all translations with all translatable
      * fields from the given entity
@@ -63,10 +64,9 @@ class TranslationRepository extends EntityRepository
             $entityId = $wrapped->getIdentifier();
             $entityClass = $wrapped->getMetadata()->name;
 
-            $translationMeta = $this->getClassMetadata(); // table inheritance support
             $qb = $this->_em->createQueryBuilder();
             $qb->select('trans.content, trans.field, trans.locale')
-                ->from($translationMeta->rootEntityName, 'trans')
+                ->from($this->getTranslationEntityName(get_class($entity)), 'trans')
                 ->where('trans.foreignKey = :entityId', 'trans.objectClass = :entityClass')
                 ->orderBy('trans.locale');
             $q = $qb->getQuery();
@@ -86,7 +86,7 @@ class TranslationRepository extends EntityRepository
 
     /**
      * Find the entity $class by the translated field.
-     * Result is the first occurence of translated field.
+     * Result is the first occurrence of translated field.
      * Query can be slow, since there are no indexes on such
      * columns
      *
@@ -99,9 +99,10 @@ class TranslationRepository extends EntityRepository
     {
         $entity = null;
         $meta = $this->_em->getClassMetadata($class);
-        $translationMeta = $this->getClassMetadata(); // table inheritance support
+        $translationEntity = $this->getTranslationEntityName($class);
+
         if ($meta->hasField($field)) {
-            $dql = "SELECT trans.foreignKey FROM {$translationMeta->rootEntityName} trans";
+            $dql = "SELECT trans.foreignKey FROM {$translationEntity} trans";
             $dql .= ' WHERE trans.objectClass = :class';
             $dql .= ' AND trans.field = :field';
             $dql .= ' AND trans.content = :value';
@@ -129,10 +130,9 @@ class TranslationRepository extends EntityRepository
     {
         $result = array();
         if ($id) {
-            $translationMeta = $this->getClassMetadata(); // table inheritance support
             $qb = $this->_em->createQueryBuilder();
             $qb->select('trans.content, trans.field, trans.locale')
-                ->from($translationMeta->rootEntityName, 'trans')
+                ->from($this->getTranslationEntityName(), 'trans')
                 ->where('trans.foreignKey = :entityId')
                 ->orderBy('trans.locale');
             $q = $qb->getQuery();
@@ -151,12 +151,25 @@ class TranslationRepository extends EntityRepository
     }
 
     /**
+     * Get the translation entity name for the provided entity, fallback to the default if none is set
+     *
+     * @param string $class Must implement Translatable
+     * @return string
+     */
+    public function getTranslationEntityName($class = null)
+    {
+        $class = $class ? $class : $this->getEntityName();
+        $config = $this->getTranslationListener()->getConfiguration($this->_em, $class);
+        return isset($config['translationClass']) ? $config['translationClass'] : $this->getClassMetadata()->rootEntityName;
+    }
+
+    /**
      * Get the currently used TranslationListener
      *
      * @throws \Gedmo\Exception\RuntimeException - if listener is not found
      * @return TranslationListener
      */
-    private function getTranslationListener()
+    public function getTranslationListener()
     {
         if (!$this->listener) {
             foreach ($this->_em->getEventManager()->getListeners() as $event => $listeners) {
